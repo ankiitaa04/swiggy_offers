@@ -13,9 +13,10 @@ st.title("🍔 Swiggy Discounts Scraper")
 
 # ✅ Replace with your real Swiggy store URLs
 STORE_URLS = [
-    "https://www.swiggy.com/restaurants/mcdonalds-baner-road-pune-25453",
-    "https://www.swiggy.com/restaurants/kfc-aundh-pune-25505"
-]
+   "https://www.swiggy.com/restaurants/burger-singh-big-punjabi-burgers-ganeshguri-guwahati-579784",
+    "https://www.swiggy.com/restaurants/burger-singh-big-punjabi-burgers-stational-club-durga-mandir-purnea-purnea-698848",
+    "https://www.swiggy.com/restaurants/burger-singh-gaya-city-gaya-701361",
+    "https://www.swiggy.com/restaurants/burger-singh-kankarbagh-patna-745653",]
 
 if st.button("Scrape Discounts"):
     for i, url in enumerate(STORE_URLS, start=1):
