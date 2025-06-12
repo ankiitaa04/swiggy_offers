@@ -5,7 +5,7 @@ import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
+from packaging.version import parse as LooseVersion
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
