@@ -1,79 +1,119 @@
 import streamlit as st
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from concurrent.futures import ThreadPoolExecutor
-import pandas as pd
-import time
+from selenium.webdriver.chrome.options import Options
+
+# ========= CONFIG =========
+
+STORE_URLS = [
+   "https://www.swiggy.com/restaurants/burger-singh-big-punjabi-burgers-ganeshguri-guwahati-579784",
+   "https://www.swiggy.com/restaurants/burger-singh-big-punjabi-burgers-stational-club-durga-mandir-purnea-purnea-698848",
+   # ... add the rest of your predefined URLs ...
+]
 
 def setup_driver():
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    return webdriver.Chrome(options=options)
+    chrome_options = Options()
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--headless")
+    return webdriver.Chrome(options=chrome_options)
 
-def scrape_store(store_url):
-    driver = setup_driver()
-    offers = []
-
+def get_store_name_from_url(url):
     try:
-        driver.get(store_url)
-        wait = WebDriverWait(driver, 10)
+        parts = url.split('/restaurants/')[1].split('-')
+        name_parts = []
+        for part in parts:
+            if part.isdigit():
+                break
+            name_parts.append(part)
+        return ' '.join(name_parts).title()
+    except:
+        return "Unknown Store"
 
-        offer_selectors = [
-            'div[class*="styles_offersMain"]',
-            'div[class*="styles_offerContainer"]',
-            'div[class*="styles_offerCard"]',
-        ]
+def scrape_single_store(driver, url):
+    offers = []
+    driver.get(url)
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+    try:
+        WebDriverWait(driver, 3).until(
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Accept')]"))
+        ).click()
+    except:
+        pass
 
-        for selector in offer_selectors:
-            try:
-                offer_elements = wait.until(
-                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
-                )
-                for element in offer_elements:
-                    offer_text = element.text.strip()
-                    if offer_text and offer_text not in offers:
-                        offers.append(offer_text)
-                if offers:
-                    break
-            except:
-                continue
+    driver.execute_script("window.scrollTo(0, 1000);")
+    time.sleep(3)
 
-    except Exception as e:
-        st.warning(f"Error loading {store_url}: {e}")
+    selectors = [
+        "div[data-testid*='offer-card-container']",
+        "div.sc-dExYaf.hQBmmU",
+        "div[class*='offer']"
+    ]
+
+    for sel in selectors:
+        try:
+            els = driver.find_elements(By.CSS_SELECTOR, sel)
+            if els:
+                for el in els:
+                    text = el.text.strip()
+                    if not text:
+                        continue
+                    lines = text.split('\n')
+                    offers.append({
+                        "store_name": get_store_name_from_url(url),
+                        "store_url": url,
+                        "title": lines[0],
+                        "description": lines[1] if len(lines) > 1 else ""
+                    })
+                break
+        except:
+            continue
+    return offers
+
+def scrape_store_parallel(url):
+    driver = setup_driver()
+    try:
+        return scrape_single_store(driver, url)
     finally:
         driver.quit()
 
-    return {"URL": store_url, "Offers": "\n".join(offers) if offers else "No offers found"}
-
-STORE_URLS = [
-    "https://www.swiggy.com/restaurants/burger-king-bandra-west-mumbai-17505",
-    "https://www.swiggy.com/restaurants/subway-pali-hill-bandra-west-mumbai-23607",
-    "https://www.swiggy.com/restaurants/faasos-wraps-and-rolls-bandra-west-mumbai-28141",
-    "https://www.swiggy.com/restaurants/behrouz-biryani-bandra-west-mumbai-28142",
-    "https://www.swiggy.com/restaurants/lunchbox-meals-and-thalis-bandra-west-mumbai-28144",
-    "https://www.swiggy.com/restaurants/sweet-truth-cakes-and-desserts-bandra-west-mumbai-28143",
-]
-
-st.title("Swiggy Discount Offer Scraper")
-
-if st.button("Scrape Offers"):
-    st.info("Scraping in progress...")
-
-    max_threads = 5
-    results = []
+def parallel_scrape_all_stores(urls, max_threads=5):
+    total = len(urls)
+    status_text = st.empty()
+    all_offers = []
 
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
-        futures = [executor.submit(scrape_store, url) for url in STORE_URLS]
-        for future in futures:
-            result = future.result()
-            results.append(result)
+        future_to_url = {executor.submit(scrape_store_parallel, url): url for url in urls}
+        for idx, future in enumerate(as_completed(future_to_url), start=1):
+            url = future_to_url[future]
+            try:
+                offers = future.result()
+                if offers:
+                    all_offers.extend(offers)
+            except Exception as e:
+                st.error(f"❌ Error scraping {url}: {e}")
+            status_text.text(f"Scraped {idx} out of {total} URLs")
 
-    df = pd.DataFrame(results)
-    st.success("Scraping complete!")
-    st.dataframe(df, use_container_width=True)
+    return all_offers
+
+# ========== STREAMLIT APP ==========
+
+st.title("🍔 Swiggy Discounts Scraper (Predefined URLs)")
+
+if st.button("Scrape Discounts"):
+    total = len(STORE_URLS)
+    st.write(f"Starting scraping 0 out of {total} URLs")
+    with st.spinner("Scraping discounts from predefined stores..."):
+        offers = parallel_scrape_all_stores(STORE_URLS, max_threads=5)
+
+    if offers:
+        st.success(f"✅ {len(offers)} discounts scraped.")
+        st.dataframe(offers)
+    else:
+        st.warning("❌ No discounts found.")
