@@ -29,18 +29,18 @@ def scrape_single_store(url):
         soup = BeautifulSoup(response.text, 'html.parser')
 
         # Attempt to find discount information
-        offer_elements = soup.select("div[data-testid*='offer-card-container'], div.sc-dExYaf.hQBmmU, div[class*='offer']")
-        
+        offer_elements = soup.select("div[data-testid^='offer-card-container']")  # Updated selector
+
         if not offer_elements:
             st.warning(f"No offer elements found for {url}. Please check the selectors.")
 
         for el in offer_elements:
-            text = el.get_text(strip=True)
-            if not text:
-                continue
-            lines = text.split('\n')
-            title = lines[0]
-            desc = lines[1] if len(lines) > 1 else ""
+            title_element = el.select_one("div.sc-aXZVg.hsuIwO")  # Title selector
+            desc_element = el.select_one("div.sc-aXZVg.foYDCM")  # Description selector
+            
+            title = title_element.get_text(strip=True) if title_element else "No Title"
+            desc = desc_element.get_text(strip=True) if desc_element else "No Description"
+            
             offers.append({
                 "store_name": get_store_name_from_url(url),
                 "store_url": url,
