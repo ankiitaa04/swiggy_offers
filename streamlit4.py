@@ -31,6 +31,9 @@ def scrape_single_store(url):
         # Attempt to find discount information
         offer_elements = soup.select("div[data-testid*='offer-card-container'], div.sc-dExYaf.hQBmmU, div[class*='offer']")
         
+        if not offer_elements:
+            st.warning(f"No offer elements found for {url}. Please check the selectors.")
+
         for el in offer_elements:
             text = el.get_text(strip=True)
             if not text:
