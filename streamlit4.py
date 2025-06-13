@@ -1,29 +1,13 @@
 import streamlit as st
-import time
+import requests
+from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 STORE_URLS = [
     "https://www.swiggy.com/restaurants/burger-singh-big-punjabi-burgers-ganeshguri-guwahati-579784",
     "https://www.swiggy.com/restaurants/burger-singh-santoshpur-kolkata-737986"
     # add more URLs as needed
 ]
-
-def setup_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    return driver
 
 def get_store_name_from_url(url):
     try:
@@ -37,36 +21,18 @@ def get_store_name_from_url(url):
     except Exception:
         return "Unknown Store"
 
-def scrape_single_store(driver, url):
+def scrape_single_store(url):
     offers = []
     try:
-        driver.get(url)
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-        try:
-            accept_btn = WebDriverWait(driver, 3).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Accept')]"))
-            )
-            accept_btn.click()
-        except Exception:
-            pass
-        driver.execute_script("window.scrollTo(0, 1000);")
-        time.sleep(2)
-        selectors = [
-            "div[data-testid*='offer-card-container']",
-            "div.sc-dExYaf.hQBmmU",
-            "div[class*='offer']"
-        ]
-        offer_elements = []
-        for sel in selectors:
-            try:
-                els = driver.find_elements(By.CSS_SELECTOR, sel)
-                if els:
-                    offer_elements = els
-                    break
-            except Exception:
-                continue
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an error for bad responses
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Attempt to find discount information
+        offer_elements = soup.select("div[data-testid*='offer-card-container'], div.sc-dExYaf.hQBmmU, div[class*='offer']")
+        
         for el in offer_elements:
-            text = el.text.strip()
+            text = el.get_text(strip=True)
             if not text:
                 continue
             lines = text.split('\n')
@@ -82,13 +48,6 @@ def scrape_single_store(driver, url):
         st.error(f"❌ Error scraping {url}: {e}")
     return offers
 
-def scrape_store_parallel(url):
-    driver = setup_driver()
-    try:
-        return scrape_single_store(driver, url)
-    finally:
-        driver.quit()
-
 def parallel_scrape_all_stores(urls, max_threads=5):
     total = len(urls)
     all_offers = []
@@ -96,7 +55,7 @@ def parallel_scrape_all_stores(urls, max_threads=5):
     status_text = st.empty()
 
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
-        future_to_url = {executor.submit(scrape_store_parallel, url): url for url in urls}
+        future_to_url = {executor.submit(scrape_single_store, url): url for url in urls}
         for idx, future in enumerate(as_completed(future_to_url), start=1):
             url = future_to_url[future]
             try:
@@ -133,4 +92,3 @@ if st.button("Scrape Discounts"):
         st.warning("No discounts found.")
 else:
     st.write("Click the button above to start scraping discounts.")
-
